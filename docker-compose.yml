@@ -1,0 +1,83 @@
+version: "3.9"
+
+services:
+  whisper-api:
+    container_name: whisper-api
+    build:
+      context: ./whisper-api
+    env_file:
+      - .env
+    restart: unless-stopped
+    expose:
+      - 8000
+
+  database:
+    image: mariadb:10
+    container_name: web-whisper-plus-db
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./db_data:/var/lib/mysql
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: 1
+      MYSQL_DATABASE: webwhisper
+      MYSQL_USER: webwhisper
+      MYSQL_PASSWORD: webwhisper
+
+  translate:
+    container_name: whisper-libretranslate
+    image: libretranslate/libretranslate:latest
+    restart: unless-stopped
+    ## To store models in a volume to avoid downloading them every time, uncomment this line. 
+    ## The local folder must be owned by uid 1032.
+    #volumes:
+    #  - ./translation_models:/home/libretranslate/.local
+    env_file:
+      - .env
+    tty: true
+    environment:
+      LT_DISABLE_WEB_UI: True
+      LT_UPDATE_MODELS: True
+    expose:
+      - 5000
+
+  backend:
+    container_name: whisper-backend
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      UPLOAD_DIR: ${UPLOAD_DIR-/app/uploads}
+      ASR_ENDPOINT: whisper-api:8000
+      LT_ENDPOINT: ${LT_ENDPOINT-translate:5000}
+      DB_BACKEND: ${DB_BACKEND-mysql}
+    volumes:
+      - ./db_data:/app/db
+      - ./whisper_uploads:/app/uploads
+    restart: unless-stopped
+    expose:
+      - 3000
+
+  webui:
+    container_name: whisper-webui
+    build:
+      context: ./webui
+    env_file:
+      - .env
+    restart: unless-stopped
+    expose:
+      - 5173
+
+  whisper-proxy:
+    container_name: whisper-proxy
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - 8899:80
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+
+volumes:
+  cache-whisper:
